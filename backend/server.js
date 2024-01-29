@@ -5,7 +5,7 @@ import jwt from "jsonwebtoken";
 
 const app = express();
 const PORT = 4000;
-const mongoURL = "mongodb://localhost:27017";
+const mongoURL = "mongodb://127.0.0.1:27017";
 const dbName = "quirknotes";
 
 // Connect to MongoDB
@@ -170,3 +170,119 @@ app.get("/getNote/:noteId", express.json(), async (req, res) => {
       res.status(500).json({ error: error.message });
     }
   });
+
+  // Retrieve all notes belonging to the user
+app.get("/getAllNotes", express.json(), async (req, res) => {
+  try {
+    // Verify the JWT from the request headers
+    const token = req.headers.authorization.split(" ")[1];
+    jwt.verify(token, "secret-key", async (err, decoded) => {
+      if (err) {
+        return res.status(401).send("Unauthorized.");
+      }
+
+      // Fetch notes belonging to the authenticated user
+      const collection = db.collection(COLLECTIONS.notes);
+      const notes = await collection.find({ username: decoded.username }).toArray();
+
+      // Return the notes in the response body
+      res.status(200).json({ response: notes });
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete a note belonging to the user
+app.delete("/deleteNote/:noteId", express.json(), async (req, res) => {
+  try {
+    // Basic param checking
+    const noteId = req.params.noteId;
+    if (!ObjectId.isValid(noteId)) {
+      return res.status(400).json({ error: "Bad request. Invalid note ID." });
+    }
+
+    // Verify the JWT from the request headers
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) {
+      return res.status(401).send("Unauthorized. Token missing.");
+    }
+
+    jwt.verify(token, "secret-key", async (err, decoded) => {
+      if (err) {
+        return res.status(401).send("Unauthorized. Invalid token.");
+      }
+
+      // Find and delete the note with given ID
+      const collection = db.collection(COLLECTIONS.notes);
+      const result = await collection.deleteOne({
+        username: decoded.username,
+        _id: new ObjectId(noteId),
+      });
+
+      // Check if the note was found and deleted
+      if (result.deletedCount === 0) {
+        return res.status(404).json({ error: `Note with ID ${noteId} not found.` });
+      }
+
+      // Return success response
+      res.status(200).json({ response: `Document with ID ${noteId} properly deleted.` });
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Edit a note belonging to the user
+app.patch("/editNote/:noteId", express.json(), async (req, res) => {
+  try {
+    // Basic param checking
+    const noteId = req.params.noteId;
+    if (!ObjectId.isValid(noteId)) {
+      return res.status(400).json({ error: "Bad request. Invalid note ID." });
+    }
+
+    // Verify the JWT from the request headers
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) {
+      return res.status(401).send("Unauthorized. Token missing.");
+    }
+
+    jwt.verify(token, "secret-key", async (err, decoded) => {
+      if (err) {
+        return res.status(401).send("Unauthorized. Invalid token.");
+      }
+
+      // Basic body request check
+      const { title, content } = req.body;
+      if (!title && !content) {
+        return res.status(400).json({ error: "Bad request. Title or content required for update." });
+      }
+
+      // Find and update the note with given ID
+      const collection = db.collection(COLLECTIONS.notes);
+      const result = await collection.updateOne(
+        {
+          username: decoded.username,
+          _id: new ObjectId(noteId),
+        },
+        {
+          $set: {
+            title: title || undefined, // Set only if title is provided
+            content: content || undefined, // Set only if content is provided
+          },
+        }
+      );
+
+      // Check if the note was found and updated
+      if (result.modifiedCount === 0) {
+        return res.status(404).json({ error: `Note with ID ${noteId} not found.` });
+      }
+
+      // Return success response
+      res.status(200).json({ response: `Document with ID ${noteId} properly updated.` });
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
